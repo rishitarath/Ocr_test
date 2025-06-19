@@ -1,0 +1,247 @@
+<!DOCTYPE html>More actions
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Lab Device OCR</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 1rem;
+      background-color: #f5f5f5;
+    }
+    h1, h2 {
+      color: #333;
+    }
+    #camera-stream {
+      border: 1px solid #ccc;
+      width: 100%;
+      max-width: 480px;
+      margin-bottom: 1rem;
+    }
+    #captured-image-display {
+      max-width: 100%;
+      border: 1px solid #ddd;
+      margin-top: 10px;
+      display: none;
+    }
+    .btn {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      background-color: #28a745;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin: 0.3rem 0.5rem 0.3rem 0;
+    }
+    .btn:hover {
+      background-color: #218838;
+    }
+    .form-section {
+      background: #fff;
+      padding: 1rem;
+      margin-top: 2rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    .form-section label {
+      font-weight: bold;
+      display: block;
+      margin-top: 0.8rem;
+    }
+    .form-section input[type="text"],
+    .form-section textarea {
+      width: 100%;
+      padding: 0.5rem;
+      margin-top: 0.3rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .status-message {
+      margin-top: 1rem;
+      padding: 10px;
+      border-radius: 4px;
+    }
+    .status-message.success {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status-message.error {
+      background-color: #f8d7da;
+      color: #721c24;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Lab Device OCR</h1>
+
+  <!-- Camera Section -->
+  <video id="camera-stream" autoplay playsinline></video><br>
+  <button class="btn" id="start-camera">Start Camera</button>
+  <button class="btn" id="capture-photo" disabled>Capture Photo</button>
+  <button class="btn" id="stop-camera" disabled>Stop Camera</button>
+
+  <p><strong>OR Upload an Image:</strong></p>
+  <input type="file" id="upload-file" accept="image/*" />
+
+  <img id="captured-image-display" alt="Captured Image" />
+  <p id="image-data-size"></p>
+
+  <div class="status-message" id="ocr-status"></div>
+
+  <!-- Result Section -->
+  <div class="form-section">
+    <h2>OCR Extracted Fields</h2>
+    <form id="application-form">
+      <label>Device Name:</label>
+      
+      <input type="text" id="device-name" name="device-name" />
+
+      <label>Serial Number:</label>
+
+      <input type="text" id="serial-number" name="serial-number" />
+
+      <label>Reading:</label>
+      <input type="text" id="reading" name="reading" />
+
+      <label>Full Extracted Text:</label>
+      <textarea id="full-text" name="full-text" rows="4" readonly></textarea>
+
+      <label>Image Reference:</label>
+      <input type="text" id="image-url-field" readonly />
+
+      <button type="submit" class="btn">Submit</button>
+    </form>
+  </div>
+
+  <script>
+    const cameraStream = document.getElementById('camera-stream');
+    const startCameraButton = document.getElementById('start-camera');
+    const capturePhotoButton = document.getElementById('capture-photo');
+    const stopCameraButton = document.getElementById('stop-camera');
+    const uploadFileInput = document.getElementById('upload-file');
+    const capturedImageDisplay = document.getElementById('captured-image-display');
+    const ocrStatus = document.getElementById('ocr-status');
+    const deviceNameField = document.getElementById('device-name');
+    const serialNumberField = document.getElementById('serial-number');
+    const readingField = document.getElementById('reading');
+    const fullTextField = document.getElementById('full-text');
+    const imageUrlField = document.getElementById('image-url-field');
+    const imageDataSize = document.getElementById('image-data-size');
+    let currentStream;
+
+    function stopCamera() {
+      if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        cameraStream.srcObject = null;
+        capturePhotoButton.disabled = true;
+        stopCameraButton.disabled = true;
+        startCameraButton.disabled = false;
+      }
+    }
+
+    async function sendBlobForOCR(blob) {
+      capturedImageDisplay.src = URL.createObjectURL(blob);
+      capturedImageDisplay.style.display = 'block';
+      imageDataSize.textContent = `Image size: ${(blob.size / 1024).toFixed(2)} KB`;
+      imageUrlField.value = capturedImageDisplay.src;
+
+      ocrStatus.className = '';
+      ocrStatus.textContent = '⏳ Sending image for OCR...';
+
+      const formData = new FormData();
+      formData.append('image', blob, 'image.jpg');
+
+      try {
+        const response = await fetch('/upload_and_ocr', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.status === "success") {
+          ocrStatus.className = 'status-message success';
+          ocrStatus.textContent = '✅ OCR Successful!';
+          fullTextField.value = data.extracted_text || '';
+          deviceNameField.value = data.device_name || '';
+          serialNumberField.value = data.serial_number || '';
+          readingField.value = data.reading || '';
+        } else {
+          ocrStatus.className = 'status-message error';
+          ocrStatus.textContent = `❌ OCR Failed: ${data.error || 'Unknown error'}`;
+        }
+      } catch (error) {
+        console.error('OCR Error:', error);
+        ocrStatus.className = 'status-message error';
+        ocrStatus.textContent = `❌ OCR Error: ${error.message}`;
+      }
+    }
+
+    startCameraButton.addEventListener('click', async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      cameraStream.srcObject = stream;
+      currentStream = stream;
+      capturePhotoButton.disabled = false;
+      stopCameraButton.disabled = false;
+      startCameraButton.disabled = true;
+      capturedImageDisplay.style.display = 'none';
+    });
+
+    capturePhotoButton.addEventListener('click', () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = cameraStream.videoWidth;
+      canvas.height = cameraStream.videoHeight;
+      canvas.getContext('2d').drawImage(cameraStream, 0, 0);
+      canvas.toBlob(blob => {
+        stopCamera();
+        sendBlobForOCR(blob);
+      }, 'image/jpeg', 0.95);
+    });
+
+    stopCameraButton.addEventListener('click', stopCamera);
+
+    uploadFileInput.addEventListener('change', () => {
+      const file = uploadFileInput.files[0];
+      if (file && file.type.startsWith('image/')) {
+        sendBlobForOCR(file);
+      }
+    });
+
+    // ✅ Replace with your actual Google Form entry IDs
+    const GOOGLE_FORM_ACTION = "https://docs.google.com/forms/d/e/1FAIpQLSfR2TBcAWWA2pt5U3XGUsERvgMJDsJR_O_Gh3dwC_BfQtz_iA/formResponse";
+    const ENTRY_DEVICE = "entry.1007778584";
+    const ENTRY_SERIAL = "entry.578288754";
+    const ENTRY_READING = "entry.1529226046";
+    const ENTRY_NOTES = "entry.710843261";
+
+    document.getElementById('application-form').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const formData = new URLSearchParams();
+      formData.append(ENTRY_DEVICE, deviceNameField.value);
+      formData.append(ENTRY_SERIAL, serialNumberField.value);
+      formData.append(ENTRY_READING, readingField.value);
+      formData.append(ENTRY_NOTES, fullTextField.value);
+
+      fetch(GOOGLE_FORM_ACTION, {
+        method: "POST",
+        mode: "no-cors",
+        body: formData
+      }).then(() => {
+        alert("✅ Submitted to Google Form successfully!");
+      }).catch(() => {
+        alert("❌ Failed to submit to Google Form.");
+      });
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        ocrStatus.className = 'status-message error';
+        ocrStatus.textContent = 'Your browser does not support camera access.';
+        startCameraButton.disabled = true;
+      }
+    });
+  </script>
+</body>
+</html>
