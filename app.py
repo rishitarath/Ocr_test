@@ -67,7 +67,7 @@ def upload_and_ocr(): #When a user sends an image, this function gets called
 
             # === Device name: Line with METTLER or Analyzer ===
             for line in lines:
-                if "METTLER" in line.upper() or "ANALYZER" in line.upper():
+                if "METTLER" in line.upper() or "ANALYZER" in line.upper() or "SELEC" in line.upper():
                     device_name = line.strip()
                     break
 
